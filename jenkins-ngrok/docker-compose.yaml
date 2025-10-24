@@ -1,0 +1,61 @@
+services:
+  dind:
+    image: docker:dind
+    container_name: jenkins-docker
+    volumes:
+      - jenkins-docker-certs:/certs/client
+      - jenkins-data:/var/jenkins_home
+    environment:
+      - DOCKER_TLS_CERTDIR=/certs
+    ports:
+      - "2376:2376"
+    privileged: true
+    networks:
+      - cicd
+  jenkins:
+    image: myjenkins-blueocean:latest
+    build:
+      context: ./
+      dockerfile: jenkins.Dockerfile
+    container_name: jenkins-blueocean
+    volumes:
+      - jenkins-data:/var/jenkins_home
+      - jenkins-docker-certs:/certs/client:ro
+    environment:
+      - DOCKER_HOST=tcp://dind:2376
+      - DOCKER_CERT_PATH=/certs/client
+      - DOCKER_TLS_VERIFY=1
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/login"]
+      interval: 1m30s
+      timeout: 30s
+      retries: 5
+      start_period: 30s
+    networks:
+      - cicd
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: ngrok
+    ports:
+      - "4040:4040"
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+      - DOMAIN_NAME=${DOMAIN_NAME}
+    command:
+      - "http"
+      - "http://jenkins:8080"
+      - "--url"
+      - "${DOMAIN_NAME}"
+    depends_on:
+      jenkins:
+        condition: service_healthy
+    networks:
+     - cicd
+volumes:
+  jenkins-docker-certs:
+  jenkins-data:
+networks:
+  cicd:
+    driver: bridge
